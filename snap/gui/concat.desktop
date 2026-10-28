@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Concat
+Comment=Video editor
+Exec=concat
+Icon=${SNAP}/meta/gui/concat.png
+Categories=AudioVideo;Video;
+Terminal=false
+StartupWMClass=concat_concat

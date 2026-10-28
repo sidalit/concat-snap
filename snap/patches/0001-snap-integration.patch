@@ -1,0 +1,97 @@
+Description: Integrate Snap updates, writable API roots, and desktop identity
+ Snap keeps application data separate from normal project files and manages
+ installed versions. Retain the existing API path validation and feature set.
+Origin: other
+Forwarded: not-needed
+Last-Update: 2026-10-28
+
+diff --git a/src/crates/concat-host/src/updates.rs b/src/crates/concat-host/src/updates.rs
+index c980758..4366594 100644
+--- a/src/crates/concat-host/src/updates.rs
++++ b/src/crates/concat-host/src/updates.rs
+@@ -240,6 +240,8 @@ impl PackageKind {
+ pub enum Fixed {
+     /// A Flatpak: Flatpak keeps it up to date.
+     Flatpak,
++    /// A snap: snapd keeps it up to date.
++    Snap,
+     /// A phone: its app store keeps it up to date.
+     Store,
+     /// Not installed from any package this knows - a build from the tree,
+@@ -263,6 +265,8 @@ pub fn installed_as() -> Result<PackageKind, Fixed> {
+                     .is_some_and(|dir| dir.join("unins000.exe").is_file()),
+                 dir.as_deref().is_some_and(in_program_files),
+             )
++        } else if cfg!(target_os = "linux") && std::env::var_os("SNAP").is_some() {
++            Err(Fixed::Snap)
+         } else if cfg!(target_os = "linux") {
+             linux_kind(
+                 std::env::var_os("APPIMAGE").is_some(),
+diff --git a/src/crates/concat-server/src/lib.rs b/src/crates/concat-server/src/lib.rs
+index 130fed1..1859a4e 100644
+--- a/src/crates/concat-server/src/lib.rs
++++ b/src/crates/concat-server/src/lib.rs
+@@ -129,11 +129,24 @@ pub struct Config {
+ /// Where the API writes when told nothing else: the user's home folder,
+ /// or nowhere when the platform has none to name.
+ pub fn home_root() -> Vec<PathBuf> {
+-    std::env::var_os("HOME")
++    let home = std::env::var_os("HOME")
+         .or_else(|| std::env::var_os("USERPROFILE"))
+         .filter(|home| !home.is_empty())
+-        .map(|home| vec![PathBuf::from(home)])
+-        .unwrap_or_default()
++        .map(PathBuf::from);
++    if cfg!(target_os = "linux") && std::env::var_os("SNAP").is_some() {
++        // Snap redirects HOME; keep public projects and private app data writable.
++        ["SNAP_REAL_HOME", "SNAP_USER_DATA", "SNAP_USER_COMMON"]
++            .into_iter()
++            .filter_map(std::env::var_os)
++            .map(PathBuf::from)
++            .filter(|path| path.is_absolute())
++            .filter_map(|path| path.canonicalize().ok())
++            .filter(|path| path.is_dir() && path.parent().is_some())
++            .chain(home)
++            .collect()
++    } else {
++        home.into_iter().collect()
++    }
+ }
+ 
+ impl Config {
+diff --git a/src/crates/concat/src/panes/settings.rs b/src/crates/concat/src/panes/settings.rs
+index c4e2a61..a96fc0a 100644
+--- a/src/crates/concat/src/panes/settings.rs
++++ b/src/crates/concat/src/panes/settings.rs
+@@ -927,6 +927,7 @@ impl SettingsPane {
+ fn fixed_note(why: Fixed) -> String {
+     match why {
+         Fixed::Flatpak => t("settings.fromFlatpak"),
++        Fixed::Snap => format!("Snap: {}", t("settings.fromStore")),
+         Fixed::Store => t("settings.fromStore"),
+         Fixed::NotFromPackage => t("settings.notFromPackage"),
+     }
+diff --git a/src/crates/concat/src/platform.rs b/src/crates/concat/src/platform.rs
+index dd1cfe1..6275ef1 100644
+--- a/src/crates/concat/src/platform.rs
++++ b/src/crates/concat/src/platform.rs
+@@ -504,12 +504,13 @@ pub fn select_backend(
+             .with_winit_window_attributes_hook(|attributes| attributes.with_decorations(false));
+     }
+     selector.select()?;
+-    // The desktop entry's name (concat.desktop, in every Linux package and
+-    // the flake), as the window's Wayland app_id and X11 class, so a dock
+-    // or a task switcher files the running window under the launcher it
+-    // came from - its icon, its pin - rather than as an unknown app. Slint
+-    // ignores it off Linux and the BSDs.
+-    let _ = slint::set_xdg_app_id("concat");
++    // Match the exported desktop entry for window grouping and its icon.
++    let app_id = if cfg!(target_os = "linux") && std::env::var_os("SNAP").is_some() {
++        "concat_concat"
++    } else {
++        "concat"
++    };
++    let _ = slint::set_xdg_app_id(app_id);
+     Ok(gpu)
+ }
+ 

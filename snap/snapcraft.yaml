@@ -1,0 +1,204 @@
+name: concat
+base: core26
+version: '0.2.8'
+title: Concat
+icon: snap/gui/concat.png
+summary: Native video editor with local AI tools and automation
+description: |
+  Concat is a native video editor with timeline editing, effects, transitions,
+  titles, captions and media export. Generate speech, transcribe audio and
+  remove backgrounds locally, or connect automation tools through its API
+  and MCP support.
+license: AGPL-3.0-or-later
+grade: stable
+confinement: strict
+website: https://concat.standalones.org
+source-code:
+  - https://github.com/jub0t/Concat
+  - https://github.com/sidalit/concat-snap
+issues:
+  - https://github.com/jub0t/Concat/issues
+  - https://github.com/sidalit/concat-snap/issues
+contact: https://github.com/sidalit/concat-snap/issues
+
+platforms:
+  amd64:
+  arm64:
+
+apps:
+  concat:
+    command: bin/concat
+    extensions: [gnome]
+    plugs:
+      - audio-playback
+      - audio-record
+      - home
+      - network
+      - network-bind
+      - removable-media
+    environment:
+      PATH: $SNAP/bin:$SNAP/usr/bin:$PATH
+
+parts:
+  concat:
+    plugin: rust
+    source: https://github.com/jub0t/Concat.git
+    source-tag: v$SNAPCRAFT_PROJECT_VERSION
+    source-depth: 1
+    source-subdir: src
+    rust-channel: '1.93.1'
+    after: [onnxruntime, sherpa-onnx, skia-binaries]
+    build-environment:
+      - ORT_LIB_LOCATION: $CRAFT_STAGE/opt/concat/lib
+      - ORT_PREFER_DYNAMIC_LINK: '1'
+      - SHERPA_ONNX_LIB_DIR: $CRAFT_STAGE/build-deps/sherpa-onnx/lib
+      - SKIA_BINARIES_URL: file://$CRAFT_STAGE/build-deps/skia/skia-binaries.tar.gz
+      - CARGO_TARGET_DIR: $CRAFT_PART_BUILD/target
+      - CARGO_BUILD_JOBS: $CRAFT_PARALLEL_BUILD_COUNT
+      - CMAKE_BUILD_PARALLEL_LEVEL: $CRAFT_PARALLEL_BUILD_COUNT
+      - CARGO_PROFILE_APP_LTO: thin
+      - CARGO_PROFILE_APP_CODEGEN_UNITS: '16'
+      - GGML_NATIVE: 'OFF'
+      - RUSTFLAGS: >-
+          ${RUSTFLAGS:-} -C link-arg=-Wl,-rpath,\$ORIGIN/lib
+          -C link-arg=-Wl,--disable-new-dtags
+      - to amd64:
+          - CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
+          - GGML_BACKEND_DL: 'ON'
+          - GGML_CPU_ALL_VARIANTS: 'ON'
+          - GGML_AVX2: 'OFF'
+          - GGML_FMA: 'OFF'
+          - GGML_F16C: 'OFF'
+          - GGML_BMI2: 'OFF'
+      - to arm64:
+          - CARGO_BUILD_TARGET: aarch64-unknown-linux-gnu
+          - GGML_BACKEND_DL: 'OFF'
+          - GGML_CPU_ALL_VARIANTS: 'OFF'
+    build-packages:
+      - build-essential
+      - cmake
+      - pkg-config
+      - libclang-dev
+      - libssl-dev
+      - libasound2-dev
+      - libfontconfig1-dev
+      - libfreetype-dev
+      - libxkbcommon-dev
+      - libwayland-dev
+      - libgl-dev
+      - libavcodec-dev
+      - libavformat-dev
+      - libavutil-dev
+      - libavdevice-dev
+      - libavfilter-dev
+      - libswscale-dev
+      - libswresample-dev
+      - patch
+    stage-packages:
+      - libavcodec62
+      - libavformat62
+      - libavutil60
+      - libavdevice62
+      - libavfilter11
+      - libswscale9
+      - libswresample6
+      - libasound2-plugins
+      - libdbus-1-3
+      - libxkbcommon-x11-0
+      - zenity
+    override-pull: |
+      craftctl default
+      patch -p1 < "$CRAFT_PROJECT_DIR/snap/patches/0001-snap-integration.patch"
+    override-build: |
+      cd "$CRAFT_PART_BUILD_WORK"
+      cargo build --locked --profile app -p concat
+
+      cd "$CARGO_TARGET_DIR/$CARGO_BUILD_TARGET/app"
+      install -Dm755 concat "$CRAFT_PART_INSTALL/opt/concat/concat"
+
+      if [ "$CRAFT_ARCH_BUILD_FOR" = amd64 ]; then
+        # Cached builds may only retain the libraries in Cargo's build output.
+        whisper_out=
+        for candidate in build/whisper-rs-sys-*/out; do
+          if [ -f "$candidate/bin/libggml-cpu-x64.so" ] &&
+             { [ -z "$whisper_out" ] || [ "$candidate/bin" -nt "$whisper_out/bin" ]; }; then
+            whisper_out="$candidate"
+          fi
+        done
+        if [ -z "$whisper_out" ]; then
+          echo "whisper-rs-sys did not produce the required amd64 CPU modules" >&2
+          exit 1
+        fi
+        mkdir -p "$CRAFT_PART_INSTALL/opt/concat/lib"
+        cp -a "$whisper_out"/lib*/libwhisper.so* "$whisper_out"/lib*/libggml*.so* \
+          "$whisper_out"/bin/libggml-cpu-*.so "$CRAFT_PART_INSTALL/opt/concat/lib/"
+        for module in x64 sandybridge haswell; do
+          if [ ! -f "$CRAFT_PART_INSTALL/opt/concat/lib/libggml-cpu-$module.so" ]; then
+            echo "Missing whisper CPU module: libggml-cpu-$module.so" >&2
+            exit 1
+          fi
+        done
+      fi
+
+      install -Dm755 "$CRAFT_PROJECT_DIR/snap/local/concat-launcher" \
+        "$CRAFT_PART_INSTALL/bin/concat"
+      install -Dm644 "$CRAFT_PROJECT_DIR/snap/local/asound.conf" \
+        "$CRAFT_PART_INSTALL/etc/alsa/alsa.conf"
+      install -Dm644 "$CRAFT_PROJECT_DIR/snap/gui/concat.png" \
+        "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/256x256/apps/concat_concat.png"
+      install -Dm644 "$CRAFT_PART_BUILD/LICENSE" \
+        "$CRAFT_PART_INSTALL/usr/share/doc/concat/LICENSE"
+      install -Dm644 "$CRAFT_PART_BUILD/THIRD_PARTY_NOTICES.md" \
+        "$CRAFT_PART_INSTALL/usr/share/doc/concat/THIRD_PARTY_NOTICES.md"
+
+  onnxruntime:
+    plugin: dump
+    source:
+      - to amd64: https://github.com/microsoft/onnxruntime/releases/download/v1.28.0/onnxruntime-linux-x64-1.28.0.tgz
+      - to arm64: https://github.com/microsoft/onnxruntime/releases/download/v1.28.0/onnxruntime-linux-aarch64-1.28.0.tgz
+    source-checksum:
+      - to amd64: sha256/a3e1b79d7bb1bf09696ce675f49e4064e6c81f6202b8225624fff0e93f8d6407
+      - to arm64: sha256/e15ff8b5d85afe6c144d97c6fd432254bf76a219daaf17658087d6ecb3e8f0bb
+    organize:
+      lib: opt/concat/lib
+      LICENSE: usr/share/doc/concat/onnxruntime/LICENSE
+      ThirdPartyNotices.txt: usr/share/doc/concat/onnxruntime/ThirdPartyNotices.txt
+    stage:
+      - opt/concat/lib/*.so*
+      - usr/share/doc/concat/onnxruntime
+
+  sherpa-onnx:
+    plugin: dump
+    source:
+      - to amd64: https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.7/sherpa-onnx-v1.13.7-linux-x64-static-lib.tar.bz2
+      - to arm64: https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.7/sherpa-onnx-v1.13.7-linux-aarch64-static-lib.tar.bz2
+    source-checksum:
+      - to amd64: sha256/d1be7a69ac2b30120058d8302e624239a3064085383cfa47994a14fdc44c32d6
+      - to arm64: sha256/743b4debabab2e9f654e393da7263bd9795aabed60ae80c83023054083415d14
+    organize:
+      lib: build-deps/sherpa-onnx/lib
+    stage:
+      - build-deps/sherpa-onnx/lib
+    prime:
+      - -build-deps
+
+  skia-binaries:
+    plugin: dump
+    source:
+      - to amd64: https://github.com/rust-skia/skia-binaries/releases/download/0.153.3/skia-binaries-b7f043e0b1e2a850e702-x86_64-unknown-linux-gnu-ganesh-gl-jpegd-jpege-pdf-vulkan.tar.gz
+      - to arm64: https://github.com/rust-skia/skia-binaries/releases/download/0.153.3/skia-binaries-b7f043e0b1e2a850e702-aarch64-unknown-linux-gnu-ganesh-gl-jpegd-jpege-pdf-vulkan.tar.gz
+    source-type: file
+    source-checksum:
+      - to amd64: sha256/9ebe4c448cc9f789bad241cbd11739cdf759e27db5719c23a7635e096d5807b3
+      - to arm64: sha256/82da2256fd0ce9419527f72ca4e9858a13c14d23073da1e618dc596397f65560
+    override-build: |
+      craftctl default
+      mkdir -p "$CRAFT_PART_INSTALL/usr/share/doc/concat/skia"
+      tar -xOf skia-binaries-*.tar.gz skia-binaries/LICENSE_SKIA > "$CRAFT_PART_INSTALL/usr/share/doc/concat/skia/LICENSE"
+    organize:
+      skia-binaries-*.tar.gz: build-deps/skia/skia-binaries.tar.gz
+    stage:
+      - build-deps/skia/skia-binaries.tar.gz
+      - usr/share/doc/concat/skia
+    prime:
+      - -build-deps
