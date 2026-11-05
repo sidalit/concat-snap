@@ -1,6 +1,6 @@
 name: concat
 base: core26
-version: '0.2.8'
+version: '0.2.9'
 title: Concat
 icon: snap/gui/concat.png
 summary: Native video editor with local AI tools and automation
