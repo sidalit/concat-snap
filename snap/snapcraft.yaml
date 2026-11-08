@@ -103,7 +103,6 @@ parts:
       - libswscale9
       - libswresample6
       - libasound2-plugins
-      - libdbus-1-3
       - libxkbcommon-x11-0
       - zenity
     override-pull: |
