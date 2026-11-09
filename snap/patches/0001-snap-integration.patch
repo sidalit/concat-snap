@@ -1,9 +1,9 @@
-Description: Integrate Snap updates, writable API roots, and desktop identity
+Description: Integrate Snap updates and writable API roots
  Snap keeps application data separate from normal project files and manages
  installed versions. Retain the existing API path validation and feature set.
 Origin: other
 Forwarded: not-needed
-Last-Update: 2026-10-28
+Last-Update: 2026-11-09
 
 diff --git a/src/crates/concat-host/src/updates.rs b/src/crates/concat-host/src/updates.rs
 index c980758..4366594 100644
@@ -71,27 +71,3 @@ index c4e2a61..a96fc0a 100644
          Fixed::Store => t("settings.fromStore"),
          Fixed::NotFromPackage => t("settings.notFromPackage"),
      }
-diff --git a/src/crates/concat/src/platform.rs b/src/crates/concat/src/platform.rs
-index dd1cfe1..6275ef1 100644
---- a/src/crates/concat/src/platform.rs
-+++ b/src/crates/concat/src/platform.rs
-@@ -504,12 +504,13 @@ pub fn select_backend(
-             .with_winit_window_attributes_hook(|attributes| attributes.with_decorations(false));
-     }
-     selector.select()?;
--    // The desktop entry's name (concat.desktop, in every Linux package and
--    // the flake), as the window's Wayland app_id and X11 class, so a dock
--    // or a task switcher files the running window under the launcher it
--    // came from - its icon, its pin - rather than as an unknown app. Slint
--    // ignores it off Linux and the BSDs.
--    let _ = slint::set_xdg_app_id("concat");
-+    // Match the exported desktop entry for window grouping and its icon.
-+    let app_id = if cfg!(target_os = "linux") && std::env::var_os("SNAP").is_some() {
-+        "concat_concat"
-+    } else {
-+        "concat"
-+    };
-+    let _ = slint::set_xdg_app_id(app_id);
-     Ok(gpu)
- }
- 

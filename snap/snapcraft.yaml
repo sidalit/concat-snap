@@ -144,7 +144,7 @@ parts:
       install -Dm644 "$CRAFT_PROJECT_DIR/snap/local/asound.conf" \
         "$CRAFT_PART_INSTALL/etc/alsa/alsa.conf"
       install -Dm644 "$CRAFT_PROJECT_DIR/snap/gui/concat.png" \
-        "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/256x256/apps/concat_concat.png"
+        "$CRAFT_PART_INSTALL/usr/share/icons/hicolor/256x256/apps/concat.png"
       install -Dm644 "$CRAFT_PART_BUILD/LICENSE" \
         "$CRAFT_PART_INSTALL/usr/share/doc/concat/LICENSE"
       install -Dm644 "$CRAFT_PART_BUILD/THIRD_PARTY_NOTICES.md" \

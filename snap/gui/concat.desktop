@@ -6,4 +6,4 @@ Exec=concat
 Icon=${SNAP}/meta/gui/concat.png
 Categories=AudioVideo;Video;
 Terminal=false
-StartupWMClass=concat_concat
+StartupWMClass=concat
