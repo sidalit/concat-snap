@@ -46,7 +46,7 @@ parts:
     source-tag: v$SNAPCRAFT_PROJECT_VERSION
     source-depth: 1
     source-subdir: src
-    rust-channel: '1.93.1'
+    rust-channel: stable
     after: [onnxruntime, sherpa-onnx, skia-binaries]
     build-environment:
       - ORT_LIB_LOCATION: $CRAFT_STAGE/opt/concat/lib
